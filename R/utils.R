@@ -228,24 +228,30 @@ screening <- function(x, y, method='glmnet', family='Gaussian'){
 }
 
 # link reutrn the value or the derivative of the chosen type of link
-link <- function(input, type = c('logistic', 'tanh'), order = 0){
-  switch(order, 0=switch(type, 'logistic'=exp(input)/(1+exp(input))-0.5, 'tanh'=tanh(input)),
-         1=switch(type, 'logistic'=exp(input)/(1+exp(input))^2, 'tanh'=1-(tanh(input))^2))
+link <- function(input, type = c('logistic', 'tanh'), order = 'origianl'){
+  switch(order, 'original'=switch(type, 'logistic'=exp(input)/(1+exp(input))-0.5, 'tanh'=tanh(input)),
+         'derivative'=switch(type, 'logistic'=exp(input)/(1+exp(input))^2, 'tanh'=1-(tanh(input))^2))
+}
+
+# nsd get the derivative of the ns
+nsd <- function(x, knots = NULL, intercept = FALSE){
+  xplus <- x+10^(-3)
+  (ns(xplus, knots=knots, intercept=intercept)-ns(x, knots=knots, intercept=intercept))/10^(-3)
 }
 
 # fitLinkLinear impliments the Step 1 of the porposed algorithm.
 # stimatedNuissance should contain two lists. One for propensity, the other for the estimated S.
 # The predictions nad inputs is always for all the data.
-# SplitIndex containes three list. $nuissance, $fit ,$efficient
+# SplitIndex containes three list. $nuisance, $fit ,$efficient
 # treatment is 0 or 1
 # covariate does not contain intercept
-fitLinkLinear <- function(covariate, response, treatment, estimatedNuissance, splitIndex = NULL, linkType = 'tanh', weights = NULL, tol = 1e-3, intercept = TRUE){
+fitLinkLinear <- function(covariate, response, treatment, estimatedNuisance, splitIndex = NULL, linkType = 'tanh', weights = NULL, tol = 1e-3, intercept = TRUE){
   if(is.null(weights)){
     weights <- rep(1, times=NROW(covariate))
   }
-  pi <- estimatedNuissance$pi[splitIndex$fit]
+  pi <- estimatedNuisance$pi[splitIndex$fit]
   pi_T <- pi * treatment[splitIndex$fit] + (1-pi) * (1-treatment[splitIndex$fit])
-  S <- estimatedNuissance$S[splitIndex$fit]
+  S <- estimatedNuisance$S[splitIndex$fit]
   trt_train <- 2*(treatment[splitIndex$fit]-0.5)
   x_train <- covariate[splitIndex$fit,]
   y_train <- response[splitIndex$fit]
@@ -255,8 +261,8 @@ fitLinkLinear <- function(covariate, response, treatment, estimatedNuissance, sp
   }
   obj <- function(beta){
     value <- weighted.mean(trt_train*S/(2*pi_T)*link(x_train %*% beta, type = linkType)-1/pi_T*y_train*log(1+trt_train*link(x_train %*% beta, type=linkType)), w_train)
-    grad <- weighted.mean((trt_train*S/(2*pi_T)*link(x_train %*% beta, type = linkType, order = 1)-
-                    1/pi_T*y_train*trt_train* link(x_train %*% beta, type = linkType, order = 1)/(1+trt_train*link(x_train %*% beta, type=linkType)))*x_train, w_train)
+    grad <- weighted.mean((trt_train*S/(2*pi_T)*link(x_train %*% beta, type = linkType, order = 'derivative')-
+                    1/pi_T*y_train*trt_train* link(x_train %*% beta, type = linkType, order = 'derivative')/(1+trt_train*link(x_train %*% beta, type=linkType)))*x_train, w_train)
     list(objective = value, gradient = grad)
   }
   beta0 <- array(0,c(NCOL(x_train),1))
@@ -265,18 +271,18 @@ fitLinkLinear <- function(covariate, response, treatment, estimatedNuissance, sp
     fit$solution <- fit$solution[-1]
   }
   fit$solution <- fit$solution/sqrt(sum(fit$solution^2))
-  fit
+  fit <- list(beta=fit$beta, xi=NULL, knods = NULL)
 }
 
-# updateXi implements the Step 2 and 3 of the proposed algorithm
-updateXi <- function(fit, covariate, response, treatment, estimatedNuissance, splitIndex = NULL, linkType = 'tanh', weights = NULL, tol = 1e-3, numberKnots = 5){
+# updateXi implements the Step 2 of the proposed algorithm
+updateXi <- function(fit, covariate, response, treatment, estimatedNuisance, splitIndex = NULL, weights = NULL, tol = 1e-3, numberKnots = 5, m_0 =NULL, withM=TRUE){
   beta_last <- fit$solution
   if(is.null(weights)){
     weights <- rep(1, times=NROW(covariate))
   }
-  pi <- estimatedNuissance$pi[splitIndex$fit]
+  pi <- estimatedNuisance$pi[splitIndex$fit]
   pi_T <- pi * treatment[splitIndex$fit] + (1-pi) * (1-treatment[splitIndex$fit])
-  S <- estimatedNuissance$S[splitIndex$fit]
+  S <- estimatedNuisance$S[splitIndex$fit]
   trt_train <- 2*(treatment[splitIndex$fit]-0.5)
   x_train <- covariate[splitIndex$fit,]
   y_train <- response[splitIndex$fit]
@@ -291,7 +297,56 @@ updateXi <- function(fit, covariate, response, treatment, estimatedNuissance, sp
                              1/pi_T*y_train*trt_train/(1+trt_train*nx_train %*% xi))*ns_train, w_train)
     list(objective = value, gradient = grad)
   }
-  constraint <- function(xi){
-
+  #form contrast matrix
+  B <- matrix(0,c(NCOL(ns_traing)-1, NCOL(ns_traing)))
+  for(i in 1:(NCOL(ns_traing)-1)){
+    B[i,i] <- 1
+    B[i, i+1] <- -1
   }
+  constraint <- function(xi, m, is.norm=TRUE){
+    value <- c(B%*%xi)
+    grad <- t(B)
+    if(!is.norm){
+      value <- c(c(B%*%xi), sum(abs(xi))-m)
+      grad <- cbind(t(B), sign(xi))
+    }
+  }
+  fit_xi <- nloptr::nloptr(x0=rep(0, times=NCOL(ns_train)), eval_f = obj, eval_g_ineq = constraint, opts = list("algorithm"="NLOPT_LD_LBFGS", "xtol_rel"=tol), m = m_0, is.norm=withM)
+  fit <- list(beta=beta_last, xi=fit_xi$solution, knots = knots)
+  fit
 }
+
+# updateBeta implements the Step 3 of the proposed algorithm
+updateBeta <- function(fit, covariate, response, treatment, estimatedNuisance, splitIndex = NULL, weights = NULL, tol = 1e-3){
+  beta_last <- fit$solution
+  xi <- fit$xi
+  if(is.null(weights)){
+    weights <- rep(1, times=NROW(covariate))
+  }
+  pi <- estimatedNuisance$pi[splitIndex$fit]
+  pi_T <- pi * treatment[splitIndex$fit] + (1-pi) * (1-treatment[splitIndex$fit])
+  S <- estimatedNuisance$S[splitIndex$fit]
+  trt_train <- 2*(treatment[splitIndex$fit]-0.5)
+  x_train <- covariate[splitIndex$fit,]
+  y_train <- response[splitIndex$fit]
+  w_train <- weights[splitIndex$fit]
+  knots <- fit$knots
+  # objective function
+  obj <- function(beta){
+    z_train <- x_train %*% beta
+    ns_train <- ns(z_train, knots = knots, intercept = TRUE)
+    nsd_train <- nsd(z_train, knots = knots, intercept = TRUE)
+    value <- weighted.mean(trt_train*S/(2*pi_T)*nx_train %*% xi-1/pi_T*y_train*log(1+trt_train*nx_train %*% xi), w_train)
+    grad <- weighted.mean((trt_train*S/(2*pi_T)-
+                             1/pi_T*y_train*trt_train/(1+trt_train*nx_train %*% xi))*nsd_train%*% xi*x_train, w_train)
+    list(objective = value, gradient = grad)
+  }
+  constraint <- function(beta){
+    value <- sum(beta^2)-1
+    grad <- 2*beta
+  }
+  fit_beta <- nloptr::nloptr(x0=fit$beta, eval_f = obj, eval_g_eq = constraint, opts = list("algorithm"="NLOPT_LD_LBFGS", "xtol_rel"=tol))
+  fit <- list(beta=fit_beta$solution/sqrt(sum(fit_beta$solution^2)), xi=fit$solution, knots = fit$knots)
+  fit
+}
+
