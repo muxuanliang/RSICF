@@ -1,5 +1,5 @@
 # rsfitSolver obtains the optimizer of the propoed optimization given M_n
-rsfitSolver <- function(covariate, response, treatment, estimatedNuisance, splitIndex = NULL, initLinkType = 'tanh', weights = NULL, tol = 10^(-3), m_0=0){
+rsfitSolver <- function(covariate, response, treatment, estimatedNuisance, splitIndex = NULL, initLinkType = 'tanh', weights = NULL, tol = 10^(-3), m_0=0, withM = TRUE){
   # initialization
   fit_init <- fitLinkLinear(covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, linkType = initLinkType, weights = weights, tol = tol)
   iter <- 0
@@ -9,7 +9,7 @@ rsfitSolver <- function(covariate, response, treatment, estimatedNuisance, split
   diff <- 1
   while((diff > tol) & (iter < 1000)){
     # updateXi
-    fit_xi <- updateXi(fit_last, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, weights = weights, tol = tol, m_0=m_0)
+    fit_xi <- updateXi(fit_last, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, weights = weights, tol = tol, m_0=m_0, withM=withM)
     # updateBeta
     fit_beta <- updateBeta(fit_xi, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, weights = weights, tol = tol)
     #update
@@ -30,18 +30,18 @@ rsfitSplit <- function(covariate, response, treatment, splitIndex = NULL, propen
   estimatedNuisance$pi <- estimatedPropensity
   if (is.null(estimatedPropensity)){
     data <- list(predictor = covariate, treatment = treatment)
-    predictedPropensityAll <- getPropensityModel(data, method = propensityModel, splitIndex = splitIndex$nuisance, Formula = propensityFormula, predictAll = TRUE)
+    predictedPropensityAll <- getPropensityModel(data, method = propensityModel, splitIndex = splitIndex, Formula = propensityFormula, predictAll = TRUE)
     estimatedNuisance$pi <- predictedPropensityAll
   }
   estimatedNuisance$S <- estimatedOutcome$control+estimatedOutcome$treatment
   if (is.null(estimatedOutcome)){
-    data <- list(predictor = covariate, treatment = treatment, outcome = outcome)
-    predictedOutcomeAll <- getOutcomeModel(data, method = outcomeModel, splitIndex = splitIndex$nuisance, Formula = outcomeFormula, predictAll = TRUE)
+    data <- list(predictor = covariate, treatment = treatment, outcome = response)
+    predictedOutcomeAll <- getOutcomeModel(data, method = outcomeModel, splitIndex = splitIndex, Formula = outcomeFormula, predictAll = TRUE)
     estimatedNuisance$S <- predictedOutcomeAll$control+predictedOutcomeAll$treatment
   }
 
   # start cross-validation for M_n
-  initSolve <- rsfitSolver(covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, initLinkType = initLinkType, weights =weights, tol = tol, withM=FALSE)
+  initSolve <- rsfitSolver(covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, initLinkType = initLinkType, weights =weights, tol = tol, m_0=1, withM=TRUE)
   m_max <- sum(abs(initSolve$xi))
   m_seq <- m_max * 10^(-seq(0,3, length.out = 10))
 }
