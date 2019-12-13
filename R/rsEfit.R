@@ -123,7 +123,7 @@ rsEfit <- function(covariate, response, treatment, splitIndex = NULL, propensity
     registerDoParallel(cl)
     fit <- foreach(iter = c(0,1,2))%dopar%{
       splitIndex_local <- NULL
-      splitIndex_local$nuisance <- (saggreIndex==iter)
+      splitIndex_local$nuisance <- (aggreIndex==iter)
       splitIndex_local$fit <- (aggreIndex==((iter+1)%%3))
       splitIndex_local$eff <- (aggreIndex==((iter+2)%%3))
       rsEfitSplit(covariate, response, treatment, splitIndex = splitIndex_local, propensityModel = propensityModel, estimatedPropensity = estimatedPropensity, outcomeModel=outcomeModel, estimatedOutcome = estimatedOutcome, lossType = lossType,weights = weights, tol=tol, propensityFormula = propensityFormula, outcomeFormula = outcomeFormula)
