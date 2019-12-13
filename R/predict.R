@@ -1,5 +1,5 @@
 #predict.rsfit get the predicted treatment
-predict.rsfit <- function(fit, newx){
+predict.rsfit <- function(fit, newx, lossType = 'logistic', type = 'transformed'){
   splitNumber <- length(fit)
   res_all <- sapply(fit, function(t){
     z = newx %*% t$beta
@@ -9,6 +9,9 @@ predict.rsfit <- function(fit, newx){
     }
     pre
   })
+  if (type=='eta'){
+    res_all <- link(res_all, lossType = lossType)
+  }
   apply(res_all,1,mean)
 }
 
