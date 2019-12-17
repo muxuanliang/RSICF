@@ -278,7 +278,7 @@ fitLinkLinear <- function(covariate, response, treatment, estimatedNuisance, spl
     fit$solution <- fit$solution[-1]
   }
   fit$solution <- fit$solution/sqrt(sum(fit$solution^2))
-  fit <- list(beta=fit$solution, xi=NULL, knods = NULL)
+  fit <- list(beta=fit$solution, xi=NULL, knods = NULL, solution=NULL)
   fit
 }
 
@@ -319,7 +319,7 @@ updateXi <- function(fit, covariate, response, treatment, estimatedNuisance, los
     list(constraints = value, jacobian = grad)
   }
   fit_xi <- nloptr::nloptr(x0=rep(0, times=NCOL(ns_train)), eval_f = obj, eval_g_ineq = g_ineq, opts = list("algorithm"="NLOPT_LD_SLSQP", "xtol_rel"=tol))
-  fit <- list(beta=beta_last, xi=fit_xi$solution, knots = knots)
+  fit <- list(beta=beta_last, xi=fit_xi$solution, knots = knots,solution=fit$solution)
   fit
 }
 
@@ -349,7 +349,7 @@ updateBeta <- function(fit, covariate, response, treatment, estimatedNuisance, l
     list(objective = value, gradient = grad)
   }
   fit_beta <- nloptr::nloptr(x0=fit$beta, eval_f = obj, opts = list("algorithm"="NLOPT_LD_SLSQP", "xtol_rel"=tol))
-  fit <- list(beta=fit_beta$solution/sqrt(sum(fit_beta$solution^2)), xi=fit$xi, knots = fit$knots)
+  fit <- list(beta=fit_beta$solution/sqrt(sum(fit_beta$solution^2)), xi=fit$xi, knots = fit$knots, solution = fit_beta)
   fit
 }
 
