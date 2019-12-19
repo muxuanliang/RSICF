@@ -14,13 +14,14 @@ rsfitSolver <- function(covariate, response, treatment, estimatedNuisance, split
     # updateBeta
     fit_beta <- updateBeta(fit_xi, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol)
     #update
-    diff <- max(1-sum(fit_beta$beta*fit_last$beta)/sqrt(sum(fit_beta$beta^2)*sum(fit_last$beta^2)), c(abs(fit_beta$xi-fit_last$xi)))
+    diff <- max(abs(fit_beta$beta-fit_last$beta), c(abs(fit_beta$xi-fit_last$xi)))
     iter <- iter+1
     fit_last <- fit_beta
   }
   # final update
-  fit <-fit_last
-  #fit <- updateXi(fit_last, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, m_0=m_0)
+  fit <- updateXi(fit_last, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, m_0=m_0)
+  fit_tmp <- updateBeta(fit, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, withConstraint = FALSE)
+  fit$solution <- fit_tmp$solution$solution
   fit
 }
 
@@ -47,22 +48,22 @@ rsfitSplit <- function(covariate, response, treatment, splitIndex = NULL, propen
   }
 
   # start cross-validation for M_n
-  initSolve <- rsfitSolver(covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, lossType = lossType, weights =weights, tol = tol, m_0=50, withM=TRUE)
-  m_max <- sum(abs(initSolve$xi))
-  m_seq <- m_max*(1-2^(-seq(0.1, 8, length.out = 10)))
-  fit <- NULL
-  #if (!parallel){
-    score <- array(0,c(10,1))
-    pi_tmp <- estimatedNuisance$pi[splitIndex$nuisance]
-    S_tmp <- estimatedNuisance$S[splitIndex$nuisance]
-    response_tmp <- response[splitIndex$nuisance]
-    treatment_tmp <- 2*(treatment[splitIndex$nuisance]-0.5)
-    weights_tmp <- weights[splitIndex$nuisance]
-    for (iter in 1:10){
-      fit[[iter]] <- rsfitSolver(covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, lossType = lossType, weights =weights, tol = tol, m_0=m_seq[iter], withM=TRUE)
-      predict_tmp <- predict.rsfitSplit(fit[[iter]], newx = covariate[splitIndex$nuisance,])
-      score[iter] <- weighted.mean(response_tmp/(pi_tmp*(treatment_tmp>0)+(1-pi_tmp)*(treatment_tmp<0))*loss(treatment_tmp * predict_tmp, type = lossType)+treatment_tmp/(2*(pi_tmp*(treatment_tmp>0)+(1-pi_tmp)*(treatment_tmp<0)))*(S_tmp-response_tmp)*predict_tmp, weights_tmp)
-    }
+  initSolve <- rsfitSolver(covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, lossType = lossType, weights =weights, tol = tol, m_0=10, withM=TRUE)
+  # m_max <- sum(abs(initSolve$xi))
+  # m_seq <- m_max*seq(0, 1, length.out = 10)
+  # fit <- NULL
+  # #if (!parallel){
+  #   score <- array(0,c(10,1))
+  #   pi_tmp <- estimatedNuisance$pi[splitIndex$nuisance]
+  #   S_tmp <- estimatedNuisance$S[splitIndex$nuisance]
+  #   response_tmp <- response[splitIndex$nuisance]
+  #   treatment_tmp <- 2*(treatment[splitIndex$nuisance]-0.5)
+  #   weights_tmp <- weights[splitIndex$nuisance]
+  #   for (iter in 1:10){
+  #     fit[[iter]] <- rsfitSolver(covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, lossType = lossType, weights =weights, tol = tol, m_0=m_seq[iter], withM=TRUE)
+  #     predict_tmp <- predict.rsfitSplit(fit[[iter]], newx = covariate[splitIndex$nuisance,])
+  #     score[iter] <- weighted.mean(response_tmp/(pi_tmp*(treatment_tmp>0)+(1-pi_tmp)*(treatment_tmp<0))*loss(treatment_tmp * predict_tmp, type = lossType)+treatment_tmp/(2*(pi_tmp*(treatment_tmp>0)+(1-pi_tmp)*(treatment_tmp<0)))*(S_tmp-response_tmp)*predict_tmp, weights_tmp)
+  #   }
   # } else {
   #   library(doParallel)
   #   n_cores <- detectCores(all.tests = FALSE, logical = TRUE)
@@ -80,48 +81,51 @@ rsfitSplit <- function(covariate, response, treatment, splitIndex = NULL, propen
   #   }
   #   stopCluster(cl)
   #}
-  score.min <- which.min(score)
-  fit_hat <- fit[[score.min]]
+  #score.min <- which.min(score)
+  fit_hat <- initSolve
 
   # start inference
   predict <- predict.rsfitSplit(fit_hat, newx = covariate)
   w0 <- predict.rsfitSplit(fit_hat, newx = covariate, derivative=TRUE)
   w1 <- response/(estimatedNuisance$pi*treatment+(1-estimatedNuisance$pi)*(1-treatment)) * loss(2*(treatment-0.5) * predict, type = lossType, order = 'hessian') * w0^2
-  w2 <- (2*(treatment-0.5)*response/(estimatedNuisance$pi*treatment+(1-estimatedNuisance$pi)*(1-treatment)) * loss(2*(treatment-0.5) * predict, type = lossType, order = 'derivative')+2*(treatment-0.5)*(estimatedNuisance$S-response)/(2*(estimatedNuisance$pi*treatment+(1-estimatedNuisance$pi)*(1-treatment))))^2 * w0^2
+  w2 <- (2*(treatment-0.5)*response/(estimatedNuisance$pi*treatment+(1-estimatedNuisance$pi)*(1-treatment)) * loss(2*(treatment-0.5) * predict, type = lossType, order = 'derivative')+2*(treatment-0.5)*(estimatedNuisance$S-response)/(2*(estimatedNuisance$pi*treatment+(1-estimatedNuisance$pi)*(1-treatment)))) * w0
   sampleIndex <- c(1:NROW(covariate))
   W1 <- matrix(0, NCOL(covariate), NCOL(covariate))
   W2 <- matrix(0, NCOL(covariate), NCOL(covariate))
+  S <- matrix(0, NCOL(covariate), 1)
   for (iter in sampleIndex[splitIndex$fit]){
     W1 <- W1+w1[iter] * (covariate[iter,]) %*% t(covariate[iter,])
-    W2 <- W2+w2[iter] * (covariate[iter,]) %*% t(covariate[iter,])
+    W2 <- W2+(w2[iter])^2 * (covariate[iter,]) %*% t(covariate[iter,])
+    S <- S+w2[iter]* (covariate[iter,])
   }
   W1 <- W1/sum(splitIndex$fit)
   W2 <- W2/sum(splitIndex$fit)
+  S <- S/sum(splitIndex$fit)
   fit_hat$var <- solve(W1) %*% W2 %*% solve(W1)
-
+  #fit_hat$solution <- fit_hat$beta+solve(W1) %*% S
 
   # true variance
-  beta_inter <- c(1,-1,1,-1)
-  beta_main <- c(1,1,1,1)
-  beta_pi <- c(0.2,-0.2,0.2,0.2)
-  inter_effect_test <- (pnorm(covariate %*% beta_inter)-0.5)
-  main_effect_test <- sqrt(apply(covariate,1,function(t){sum(t^2)}))
-  predict <-log((inter_effect_test/2+1)/(1-inter_effect_test/2))
-  estimatedNuisance$pi <- exp(covariate %*% beta_pi)/(1+exp(covariate %*% beta_pi))
-  estimatedNuisance$S <- 2*main_effect_test
-  w0 <- - 2 * dnorm(covariate %*% beta_inter)/2 / ((1-inter_effect_test/2) * (1+inter_effect_test/2))
-  w1 <- response/(estimatedNuisance$pi*treatment+(1-estimatedNuisance$pi)*(1-treatment)) * loss(2*(treatment-0.5) * predict, type = lossType, order = 'hessian') * w0^2
-  w2 <- (2*(treatment-0.5)*response/(estimatedNuisance$pi*treatment+(1-estimatedNuisance$pi)*(1-treatment)) * loss(2*(treatment-0.5) * predict, type = lossType, order = 'derivative')+2*(treatment-0.5)*(estimatedNuisance$S-response)/(2*(estimatedNuisance$pi*treatment+(1-estimatedNuisance$pi)*(1-treatment))))^2 * w0^2
-  sampleIndex <- c(1:NROW(covariate))
-  W1 <- matrix(0, NCOL(covariate), NCOL(covariate))
-  W2 <- matrix(0, NCOL(covariate), NCOL(covariate))
-  for (iter in sampleIndex[splitIndex$fit]){
-    W1 <- W1+w1[iter] * (covariate[iter,]) %*% t(covariate[iter,])
-    W2 <- W2+w2[iter] * (covariate[iter,]) %*% t(covariate[iter,])
-  }
-  W1 <- W1/sum(splitIndex$fit)
-  W2 <- W2/sum(splitIndex$fit)
-  fit_hat$varTrue <- solve(W1) %*% W2 %*% solve(W1)
+  # beta_inter <- c(1,-1,1,-1)
+  # beta_main <- c(1,1,1,1)
+  # beta_pi <- c(0.2,-0.2,0.2,0.2)
+  # inter_effect_test <- (pnorm(covariate %*% beta_inter)-0.5)
+  # main_effect_test <- sqrt(apply(covariate,1,function(t){sum(t^2)}))
+  # predict <-log((inter_effect_test/2+1)/(1-inter_effect_test/2))
+  # estimatedNuisance$pi <- exp(covariate %*% beta_pi)/(1+exp(covariate %*% beta_pi))
+  # estimatedNuisance$S <- 2*main_effect_test
+  # w0 <- - 2 * dnorm(covariate %*% beta_inter)/2 / ((1-inter_effect_test/2) * (1+inter_effect_test/2))
+  # w1 <- response/(estimatedNuisance$pi*treatment+(1-estimatedNuisance$pi)*(1-treatment)) * loss(2*(treatment-0.5) * predict, type = lossType, order = 'hessian') * w0^2
+  # w2 <- (2*(treatment-0.5)*response/(estimatedNuisance$pi*treatment+(1-estimatedNuisance$pi)*(1-treatment)) * loss(2*(treatment-0.5) * predict, type = lossType, order = 'derivative')+2*(treatment-0.5)*(estimatedNuisance$S-response)/(2*(estimatedNuisance$pi*treatment+(1-estimatedNuisance$pi)*(1-treatment))))^2 * w0^2
+  # sampleIndex <- c(1:NROW(covariate))
+  # W1 <- matrix(0, NCOL(covariate), NCOL(covariate))
+  # W2 <- matrix(0, NCOL(covariate), NCOL(covariate))
+  # for (iter in sampleIndex[splitIndex$fit]){
+  #   W1 <- W1+w1[iter] * (covariate[iter,]) %*% t(covariate[iter,])
+  #   W2 <- W2+w2[iter] * (covariate[iter,]) %*% t(covariate[iter,])
+  # }
+  # W1 <- W1/sum(splitIndex$fit)
+  # W2 <- W2/sum(splitIndex$fit)
+  # fit_hat$varTrue <- solve(W1) %*% W2 %*% solve(W1)
 
   fit_hat
 }
