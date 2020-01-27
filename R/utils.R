@@ -242,7 +242,17 @@ link <- function(eta_trans, lossType='logistic'){
 
 # nsd get the derivative of the ns
 nsd <- function(x, knots = NULL, intercept = FALSE, Boundary.knots = range(x)){
-  splines2::dbs(x, knots=knots, intercept=intercept, Boundary.knots =Boundary.knots)
+  div <- sapply(x,function(t){
+    if((t+1e-6)>=Boundary.knots[2]){
+      res <- (splines2::bSpline(t, knots=knots, intercept=intercept, Boundary.knots =Boundary.knots)-splines2::bSpline(t-1e-6, knots=knots, intercept=intercept, Boundary.knots =Boundary.knots))/(1e-6)
+    } else if ((t-1e-6)<=Boundary.knots[1]){
+      res <- (splines2::bSpline(t+1e-6, knots=knots, intercept=intercept, Boundary.knots =Boundary.knots)-splines2::bSpline(t, knots=knots, intercept=intercept, Boundary.knots =Boundary.knots))/(1e-6)
+    } else {
+      res <- (splines2::bSpline(t+1e-6, knots=knots, intercept=intercept, Boundary.knots =Boundary.knots)-splines2::bSpline(t-1e-6, knots=knots, intercept=intercept, Boundary.knots =Boundary.knots))/(2*1e-6)
+    }
+    res
+  })
+  t(div)
 }
 
 # fitLinkLinear impliments the Step 1 of the porposed algorithm.
@@ -282,7 +292,7 @@ fitLinkLinear <- function(covariate, response, treatment, estimatedNuisance, spl
 }
 
 # updateXi implements the Step 2 of the proposed algorithm
-updateXi <- function(fit, covariate, response, treatment, estimatedNuisance, lossType='tanh', splitIndex = NULL, weights = NULL, tol = 1e-3, numberKnots = 4, m_0 =NULL){
+updateXi <- function(fit, covariate, response, treatment, estimatedNuisance, lossType='tanh', splitIndex = NULL, weights = NULL, tol = 1e-3, numberKnots = 4, m_0 =NULL, constraint = TRUE, boundaryPoint=c(-1,1)){
   beta_last <- fit$beta
   if(is.null(weights)){
     weights <- rep(1, times=NROW(covariate))
@@ -295,10 +305,8 @@ updateXi <- function(fit, covariate, response, treatment, estimatedNuisance, los
   y_train <- response[splitIndex$fit]
   w_train <- weights[splitIndex$fit]
   z_train <- x_train %*% beta_last
-  knots <- quantile(z_train, probs=seq(0,1,length.out = numberKnots+2))
-  knots[1] <- knots[1]-sd(z_train)
-  knots[numberKnots+2] <- knots[numberKnots+2]+sd(z_train)
-  ns_train <- splines::bs(z_train, knots = knots[2:(1+numberKnots)], intercept = FALSE, Boundary.knots = c(knots[1], knots[numberKnots+2]))
+  knots <- quantile(z_train, probs=seq(0,1,length.out = numberKnots))
+  ns_train <- splines2::bSpline(z_train, knots = knots, intercept = FALSE, Boundary.knots = boundaryPoint)
   ns_train <- cbind(1, ns_train)
   # tuning start
   obj <- function(xi){
@@ -314,9 +322,16 @@ updateXi <- function(fit, covariate, response, treatment, estimatedNuisance, los
     B[i, i+1] <- -1
   }
   g_ineq <- function(xi){
-    value <- c(sum(abs(xi))-m_0, c(B%*% xi))
-    grad <- rbind(sign(xi), B)
+    value <- c(sum(abs(xi[-1]))-m_0, c(B%*% xi))
+    grad <- rbind(c(0,sign(xi[-1])), B)
     list(constraints = value, jacobian = grad)
+  }
+  if(!constraint){
+    g_ineq <- function(xi){
+      value <- c(sum(abs(xi[-1]))-m_0)
+      grad <- c(0,sign(xi[-1]))
+      list(constraints = value, jacobian = grad)
+    }
   }
   fit_xi <- nloptr::nloptr(x0=rep(0, times=NCOL(ns_train)), eval_f = obj, eval_g_ineq = g_ineq, opts = list("algorithm"="NLOPT_LD_SLSQP", "xtol_rel"=tol))
   fit <- list(beta=beta_last, xi=fit_xi$solution, knots = knots,solution=fit$solution)
@@ -324,7 +339,7 @@ updateXi <- function(fit, covariate, response, treatment, estimatedNuisance, los
 }
 
 # updateBeta implements the Step 3 of the proposed algorithm
-updateBeta <- function(fit, covariate, response, treatment, estimatedNuisance, lossType='tanh', splitIndex = NULL, weights = NULL, tol = 1e-3, withConstraint = TRUE){
+updateBeta <- function(fit, covariate, response, treatment, estimatedNuisance, lossType='tanh', splitIndex = NULL, weights = NULL, tol = 1e-3, withConstraint = TRUE, boundaryPoint = c(-1,1)){
   beta_last <- fit$beta
   xi <- fit$xi
   if(is.null(weights)){
@@ -341,9 +356,9 @@ updateBeta <- function(fit, covariate, response, treatment, estimatedNuisance, l
   # objective function
   obj <- function(beta){
     z_train <- x_train %*% beta
-    ns_train <- splines::bs(z_train, knots = knots[2:(length(knots)-1)], intercept = FALSE, Boundary.knots=c(knots[1], knots[length(knots)]))
+    ns_train <- splines2::bSpline(z_train, knots = knots, intercept = FALSE, Boundary.knots = boundaryPoint)
     ns_train <- cbind(1, ns_train)
-    nsd_train <- cbind(0,nsd(z_train, knots = knots[2:(length(knots)-1)], intercept = FALSE, Boundary.knots=c(knots[1], knots[length(knots)])))
+    nsd_train <- cbind(0,nsd(z_train, knots = knots, intercept = FALSE, Boundary.knots = boundaryPoint))
     value <- weighted.mean(y_train/pi_T*loss(trt_train * ns_train %*% xi, type = lossType)+trt_train/(2*pi_T)*(S-y_train)*ns_train %*% xi, w_train)
     grad <- (apply(apply(x_train,2,function(z){(1/pi_T*y_train*trt_train* loss(trt_train * ns_train %*% xi, type = lossType, order = 'derivative')+trt_train/(2*pi_T)*(S-y_train))*nsd_train%*% xi*z}),
                    2, function(t){weighted.mean(t, w_train, na.rm = TRUE)}))

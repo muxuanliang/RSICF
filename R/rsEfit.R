@@ -1,6 +1,6 @@
 # rsEfitSplit obtain the estimation of RSICF assuming a single index model on a slited data. The variance estimaor of the coefficiencts are provided.
 # splitIndex has three list. $nuisance, on which we fit nuisance parameter. $fit, on which we fit an initial rsfitSplit. $eff, on which we improve by the efficient score
-rsEfitSplit <- function(covariate, response, treatment, splitIndex = NULL, propensityModel = 'glmnet', estimatedPropensity = NULL, outcomeModel = 'kernel', estimatedOutcome = NULL, lossType = 'logistic', weights = NULL, tol = 1e-5, propensityFormula=NULL, outcomeFormula=NULL){
+rsEfitSplit <- function(covariate, response, treatment, splitIndex = NULL, propensityModel = 'glmnet', estimatedPropensity = NULL, outcomeModel = 'kernel', estimatedOutcome = NULL, lossType = 'logistic', weights = NULL, tol = 1e-3, propensityFormula=NULL, outcomeFormula=NULL, constraint = TRUE, boundaryPoint = c(-1,1)){
 
   # fit nuisance parameter on 1
   estimatedNuisance <- NULL
@@ -23,7 +23,7 @@ rsEfitSplit <- function(covariate, response, treatment, splitIndex = NULL, prope
   }
 
   # start cross-validation for M_n
-  initSolve <- rsfitSolver(covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, lossType = lossType, weights =weights, tol = tol, m_0=10, withM=TRUE)
+  initSolve <- rsfitSolver(covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, lossType = lossType, weights =weights, tol = tol, m_0=500, constraint=constraint, boundaryPoint = boundaryPoint)
   m_max <- sum(abs(initSolve$xi))
   m_seq <- m_max*seq(0, 1, length.out = 10)
   fit <- NULL
@@ -54,7 +54,7 @@ rsEfitSplit <- function(covariate, response, treatment, splitIndex = NULL, prope
   inv_W <- 1/estimatedNuisance$pi * ratio + 1/(1-estimatedNuisance$pi) * 1/ratio
   weights <- inv_W^(-1) * estimatedNuisance$S
   # refit the efficient loss
-  initSolve <- rsfitSolver(covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex_eff, lossType = lossType, weights =weights, tol = tol, m_0=10, withM=TRUE)
+  initSolve <- rsfitSolver(covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex_eff, lossType = lossType, weights =weights, tol = tol, m_0=500, constraint=constraint,boundaryPoint = boundaryPoint)
   m_max <- sum(abs(initSolve$xi))
   m_seq <- m_max*seq(0, 1, length.out = 10)
   fit <- NULL
@@ -90,7 +90,7 @@ rsEfitSplit <- function(covariate, response, treatment, splitIndex = NULL, prope
   W1 <- W1/sum(splitIndex$fit)
   W2 <- W2/sum(splitIndex$fit)
   S <- S/sum(splitIndex$fit)
-  fit_hat$var <- solve(W1) %*% W2 %*% solve(W1)
+  fit_hat$var <- pracma::pinv(W1) %*% W2 %*% pracma::pinv(W1)
   #fit_hat$solution <- fit_hat$beta+solve(W1) %*% S
 
   # true variance
@@ -119,12 +119,11 @@ rsEfitSplit <- function(covariate, response, treatment, splitIndex = NULL, prope
   # W1 <- W1/sum(splitIndex$fit)
   # W2 <- W2/sum(splitIndex$fit)
   # fit_hat$varTrue <- solve(W1) %*% W2 %*% solve(W1)
-
   fit_hat
 }
 
 # rsEfit obtains sysmetric results
-rsEfit <- function(covariate, response, treatment, splitIndex = NULL, propensityModel = 'glmnet', estimatedPropensity = NULL, outcomeModel = 'kernel', estimatedOutcome = NULL, lossType = 'logistic', weights = NULL, tol = 1e-5, propensityFormula=NULL, outcomeFormula=NULL, parallel = FALSE){
+rsEfit <- function(covariate, response, treatment, splitIndex = NULL, propensityModel = 'glmnet', estimatedPropensity = NULL, outcomeModel = 'kernel', estimatedOutcome = NULL, lossType = 'logistic', weights = NULL, tol = 1e-3, propensityFormula=NULL, outcomeFormula=NULL, parallel = FALSE, constraint=TRUE,boundaryPoint =c(-1,1)){
   n <- NROW(covariate)
   if(is.null(splitIndex)){
     random_index <- sample(c(1,2,3), n, replace = TRUE)
@@ -135,18 +134,18 @@ rsEfit <- function(covariate, response, treatment, splitIndex = NULL, propensity
   }
   fit <- NULL
   if(!parallel){
-    fit[[1]] <- rsEfitSplit(covariate, response, treatment, splitIndex = splitIndex, propensityModel = propensityModel, estimatedPropensity = estimatedPropensity, outcomeModel=outcomeModel, estimatedOutcome = estimatedOutcome, lossType = lossType, weights = weights, tol=tol, propensityFormula = propensityFormula, outcomeFormula = outcomeFormula)
+    fit[[1]] <- rsEfitSplit(covariate, response, treatment, splitIndex = splitIndex, propensityModel = propensityModel, estimatedPropensity = estimatedPropensity, outcomeModel=outcomeModel, estimatedOutcome = estimatedOutcome, lossType = lossType, weights = weights, tol=tol, propensityFormula = propensityFormula, outcomeFormula = outcomeFormula, constraint=constraint,boundaryPoint = boundaryPoint)
     # reverse the index
     tmp <- splitIndex$eff
     splitIndex$eff <- splitIndex$fit
     splitIndex$fit <- splitIndex$nuisance
     splitIndex$nuisance <- tmp
-    fit[[2]] <- rsEfitSplit(covariate, response, treatment, splitIndex = splitIndex, propensityModel = propensityModel, estimatedPropensity = estimatedPropensity, outcomeModel=outcomeModel, estimatedOutcome = estimatedOutcome, lossType = lossType, weights = weights, tol=tol, propensityFormula = propensityFormula, outcomeFormula = outcomeFormula)
+    fit[[2]] <- rsEfitSplit(covariate, response, treatment, splitIndex = splitIndex, propensityModel = propensityModel, estimatedPropensity = estimatedPropensity, outcomeModel=outcomeModel, estimatedOutcome = estimatedOutcome, lossType = lossType, weights = weights, tol=tol, propensityFormula = propensityFormula, outcomeFormula = outcomeFormula, constraint=constraint,boundaryPoint = boundaryPoint)
     tmp <- splitIndex$eff
     splitIndex$eff <- splitIndex$fit
     splitIndex$fit <- splitIndex$nuisance
     splitIndex$nuisance <- tmp
-    fit[[3]] <- rsEfitSplit(covariate, response, treatment, splitIndex = splitIndex, propensityModel = propensityModel, estimatedPropensity = estimatedPropensity, outcomeModel=outcomeModel, estimatedOutcome = estimatedOutcome, lossType = lossType, weights = weights, tol=tol, propensityFormula = propensityFormula, outcomeFormula = outcomeFormula)
+    fit[[3]] <- rsEfitSplit(covariate, response, treatment, splitIndex = splitIndex, propensityModel = propensityModel, estimatedPropensity = estimatedPropensity, outcomeModel=outcomeModel, estimatedOutcome = estimatedOutcome, lossType = lossType, weights = weights, tol=tol, propensityFormula = propensityFormula, outcomeFormula = outcomeFormula, constraint=constraint,boundaryPoint = boundaryPoint)
   } else {
     aggreIndex <- 0 * splitIndex$nuisance + 1 * splitIndex$fit + 2 * splitIndex$eff
     library(doParallel)
@@ -158,7 +157,7 @@ rsEfit <- function(covariate, response, treatment, splitIndex = NULL, propensity
       splitIndex_local$nuisance <- (aggreIndex==iter)
       splitIndex_local$fit <- (aggreIndex==((iter+1)%%3))
       splitIndex_local$eff <- (aggreIndex==((iter+2)%%3))
-      rsEfitSplit(covariate, response, treatment, splitIndex = splitIndex_local, propensityModel = propensityModel, estimatedPropensity = estimatedPropensity, outcomeModel=outcomeModel, estimatedOutcome = estimatedOutcome, lossType = lossType,weights = weights, tol=tol, propensityFormula = propensityFormula, outcomeFormula = outcomeFormula)
+      rsEfitSplit(covariate, response, treatment, splitIndex = splitIndex_local, propensityModel = propensityModel, estimatedPropensity = estimatedPropensity, outcomeModel=outcomeModel, estimatedOutcome = estimatedOutcome, lossType = lossType,weights = weights, tol=tol, propensityFormula = propensityFormula, outcomeFormula = outcomeFormula, constraint=constraint,boundaryPoint = boundaryPoint)
     }
     stopCluster(cl)
   }
