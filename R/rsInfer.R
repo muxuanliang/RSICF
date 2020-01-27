@@ -32,7 +32,7 @@ rsInference <- function(rsfit, efficient = FALSE){
   W2 <- matrix(0, NCOL(covariate), NCOL(covariate))
   S <- matrix(0, NCOL(covariate), 1)
   for (iter in sampleIndex[splitIndex$fit]){
-    W1 <- W1+w1[iter] * (covariate[iter,]) %*% t(covariate[iter,]-tildeX[iter,])
+    W1 <- W1+w1[iter] * (covariate[iter,]-tildeX[iter,]) %*% t(covariate[iter,]-tildeX[iter,])
     W2 <- W2+(w2[iter])^2 * (covariate[iter,]-tildeX[iter,]) %*% t(covariate[iter,]-tildeX[iter,])
     S <- S+w2[iter]* (covariate[iter,]-tildeX[iter,])
   }

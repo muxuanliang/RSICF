@@ -292,7 +292,7 @@ fitLinkLinear <- function(covariate, response, treatment, estimatedNuisance, spl
 }
 
 # updateXi implements the Step 2 of the proposed algorithm
-updateXi <- function(fit, covariate, response, treatment, estimatedNuisance, lossType='tanh', splitIndex = NULL, weights = NULL, tol = 1e-3, numberKnots = 4, m_0 =NULL, constraint = TRUE, boundaryPoint=c(-1,1)){
+updateXi <- function(fit, covariate, response, treatment, estimatedNuisance, lossType='tanh', splitIndex = NULL, weights = NULL, tol = 1e-3, numberKnots = 8, m_0 =NULL, constraint = TRUE, boundaryPoint=c(-1,1)){
   beta_last <- fit$beta
   if(is.null(weights)){
     weights <- rep(1, times=NROW(covariate))
