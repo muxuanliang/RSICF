@@ -1,27 +1,32 @@
 # rsfitSolver obtains the optimizer of the propoed optimization given M_n
-rsfitSolver <- function(covariate, response, treatment, estimatedNuisance, splitIndex = NULL, lossType = 'logistic', weights = NULL, tol = 10^(-3), m_0=0, constraint = TRUE, boundaryPoint=c(-1,1)){
+rsfitSolver <- function(covariate, response, treatment, estimatedNuisance, splitIndex = NULL, lossType = 'logistic', weights = NULL, tol = 10^(-3), m_0=0, constraint = TRUE, boundaryPoint=c(-1,1), numberKnots = 5){
   # initialization
-  fit_init <- fitLinkLinear(covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, lossType = lossType, weights = weights, tol = tol)
+  fit_earl <- ITRFitAll(list(predictor = covariate, treatment = (treatment > 0), outcome = response), loss = 'logistic', sampleSplitIndex = splitIndex$nuisance, propensity = estimatedNuisance$pi, outcome = estimatedNuisance, test=FALSE)
+  #fit_init <- fitLinkLinear(covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, lossType = lossType, weights = weights, tol = tol)
   iter <- 0
 
   # iteration start
-  fit_last <- fit_init
+  fit_last <- NULL
+  tmp_beta<- (fit_earl$fit[[1]]$fit$beta[,fit_earl$fit[[1]]$fit$lambda==fit_earl$fit[[1]]$fit$lambda.min] + fit_earl$fit[[2]]$fit$beta[,fit_earl$fit[[2]]$fit$lambda==fit_earl$fit[[2]]$fit$lambda.min])/2
+  fit_last$beta <- tmp_beta/sqrt(sum(tmp_beta^2))
   fit_last$xi <- 0
   diff <- 1
   while((diff > tol) & (iter < 100)){
     # updateXi
-    fit_xi <- updateXi(fit_last, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, m_0=m_0, constraint=constraint, boundaryPoint = boundaryPoint)
+    fit_xi <- updateXi(fit_last, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, m_0=m_0, constraint=constraint, boundaryPoint = boundaryPoint, numberKnots = numberKnots)
     # updateBeta
-    fit_beta <- updateBeta(fit_xi, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, withConstraint = TRUE, boundaryPoint = boundaryPoint)
+    fit_beta <- updateBeta(fit_xi, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, withConstraint = TRUE, boundaryPoint = boundaryPoint, step=0.1)
+    # update no constraint
+    #fit_tmp <- updateBeta(fit_xi, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, withConstraint = FALSE, boundaryPoint = boundaryPoint)
     #update
-    diff <- max(abs(fit_beta$beta-fit_last$beta))*max(c(abs(fit_beta$xi-fit_last$xi)))
+    diff <- max(max(abs(fit_beta$beta-fit_last$beta)),max(c(abs(fit_beta$xi-fit_last$xi)))) #abs(fit_beta$beta-fit_tmp$beta))
     iter <- iter+1
     fit_last <- fit_beta
   }
   # final update
   fit <- updateXi(fit_last, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, m_0=m_0, constraint=constraint, boundaryPoint = boundaryPoint)
   fit_tmp <- updateBeta(fit, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, withConstraint = FALSE, boundaryPoint = boundaryPoint)
-  fit$solution <- fit_tmp$solution$solution
+  fit$solution <- fit_tmp$beta
   fit$boundaryPoint <- boundaryPoint
   fit
 }
@@ -37,10 +42,14 @@ rsfitSplit <- function(covariate, response, treatment, splitIndex = NULL, propen
     estimatedNuisance$pi <- predictedPropensityAll
   }
   estimatedNuisance$S <- estimatedOutcome$control+estimatedOutcome$treatment
+  estimatedNuisance$control <- estimatedOutcome$control
+  estimatedNuisance$treatment <- estimatedOutcome$treatment
   if (is.null(estimatedOutcome)){
     data <- list(predictor = covariate, treatment = treatment, outcome = response)
     predictedOutcomeAll <- getOutcomeModel(data, method = outcomeModel, splitIndex = splitIndex, Formula = outcomeFormula, predictAll = TRUE)
     estimatedNuisance$S <- predictedOutcomeAll$control+predictedOutcomeAll$treatment
+    estimatedNuisance$control <- predictedOutcomeAll$control
+    estimatedNuisance$treatment <- predictedOutcomeAll$treatment
   }
 
   # weights
@@ -49,14 +58,32 @@ rsfitSplit <- function(covariate, response, treatment, splitIndex = NULL, propen
   }
 
   # solve
-  fit_hat <- rsfitSolver(covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, lossType = lossType, weights =weights, tol = tol, m_0=500, constraint = constraint, boundaryPoint = boundaryPoint)
+  m_0 <- 5
+  numberKnots <- 5
+  fit_hat <- rsfitSolver(covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, lossType = lossType, weights =weights, tol = tol, m_0=m_0, constraint = constraint, boundaryPoint = boundaryPoint, numberKnots = numberKnots)
+  diff_min <- max(abs(fit_hat$solution-fit_hat$beta))
+  fit_hat_min <- fit_hat
+  dif_tmp <- diff_min
+  while((diff_min>10^(-3)) & (numberKnots <= 8) & (m_0 <= 2^8)){
+    if ((abs(dif_tmp - diff_min)<10^(-2))|(dif_tmp >= diff_min)|(sum(abs(fit_hat$xi))<m_0)){
+      numberKnots <- numberKnots + 1
+    } else {
+      m_0 <- 2*m_0
+    }
+    fit_hat <- rsfitSolver(covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, lossType = lossType, weights =weights, tol = tol, m_0=m_0, constraint = constraint, boundaryPoint = boundaryPoint, numberKnots = numberKnots)
+    dif_tmp <- max(abs(fit_hat$solution-fit_hat$beta))
+    if (dif_tmp < diff_min){
+      fit_hat_min <- fit_hat
+      diff_min <- dif_tmp
+    }
+  }
 
   # return
-  list(fit=fit_hat, covariate=covariate, response=response, treatment=treatment, estimatedNuisance=estimatedNuisance, splitIndex=splitIndex, lossType = lossType, weights =weights)
+  list(fit=fit_hat_min, covariate=covariate, response=response, treatment=treatment, estimatedNuisance=estimatedNuisance, splitIndex=splitIndex, lossType = lossType, weights =weights)
 }
 
 # rsfit obtains sysmetric results
-rsfit <- function(covariate, response, treatment, splitIndex = NULL, propensityModel = 'glmnet', estimatedPropensity = NULL, outcomeModel = 'kernel', estimatedOutcome = NULL, lossType = 'logistic', weights = NULL, tol = 1e-3, propensityFormula=NULL, outcomeFormula=NULL, parallel = FALSE, constraint = TRUE, boundaryPoint = c(-1,1)){
+rsfit <- function(covariate, response, treatment, splitIndex = NULL, propensityModel = 'glmnet', estimatedPropensity = NULL, outcomeModel = 'kernel', estimatedOutcome = NULL, lossType = 'logistic', weights = NULL, tol = 1e-3, propensityFormula=NULL, outcomeFormula=NULL, parallel = FALSE, constraint = TRUE, boundaryPoint = c(-1,1), efficient = TRUE){
   n <- NROW(covariate)
   if(is.null(splitIndex)){
     random_index <- sample(c(1,2,3), n, replace = TRUE)
@@ -101,9 +128,9 @@ rsfit <- function(covariate, response, treatment, splitIndex = NULL, propensityM
   }
   fit$betaAN <- (fit$fit[[1]]$betaAN+fit$fit[[2]]$betaAN+fit$fit[[3]]$betaAN)/3
   W1 <- (fit$fit[[1]]$W1+fit$fit[[2]]$W1+fit$fit[[3]]$W1)/3
-  W1 <- W1 + 10^(-5)*diag(min(diag(W1)),NCOL(covariate),NCOL(covariate))
+  #W1 <- W1 + 10^(-5)*diag(min(diag(W1)),NCOL(covariate),NCOL(covariate))
   W2 <- (fit$fit[[1]]$W2+fit$fit[[2]]$W2+fit$fit[[3]]$W2)/3
-  fit$sigmaAN <- solve(W1) %*% W2 %*% solve(W1)
+  fit$sigmaAN <- pmin(diag(solve(W1) %*% W2 %*% solve(W1)), diag((fit$fit[[1]]$sigmaAN+fit$fit[[2]]$sigmaAN+fit$fit[[3]]$sigmaAN)/3))
   fit
 }
 

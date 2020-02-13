@@ -292,7 +292,7 @@ fitLinkLinear <- function(covariate, response, treatment, estimatedNuisance, spl
 }
 
 # updateXi implements the Step 2 of the proposed algorithm
-updateXi <- function(fit, covariate, response, treatment, estimatedNuisance, lossType='tanh', splitIndex = NULL, weights = NULL, tol = 1e-3, numberKnots = 8, m_0 =NULL, constraint = TRUE, boundaryPoint=c(-1,1)){
+updateXi <- function(fit, covariate, response, treatment, estimatedNuisance, lossType='tanh', splitIndex = NULL, weights = NULL, tol = 1e-3, numberKnots = 5, m_0 =NULL, constraint = TRUE, boundaryPoint=c(-1,1)){
   beta_last <- fit$beta
   if(is.null(weights)){
     weights <- rep(1, times=NROW(covariate))
@@ -306,6 +306,8 @@ updateXi <- function(fit, covariate, response, treatment, estimatedNuisance, los
   w_train <- weights[splitIndex$fit]
   z_train <- x_train %*% beta_last
   knots <- quantile(z_train, probs=seq(0,1,length.out = numberKnots))
+  knots[1] <- knots[1]-0.3*abs(knots[2]-knots[1])
+  knots[numberKnots] <- knots[numberKnots]+0.3*abs(knots[numberKnots]-knots[numberKnots-1])
   ns_train <- splines2::bSpline(z_train, knots = knots, intercept = FALSE, Boundary.knots = boundaryPoint)
   ns_train <- cbind(1, ns_train)
   # tuning start
@@ -334,12 +336,17 @@ updateXi <- function(fit, covariate, response, treatment, estimatedNuisance, los
     }
   }
   fit_xi <- nloptr::nloptr(x0=rep(0, times=NCOL(ns_train)), eval_f = obj, eval_g_ineq = g_ineq, opts = list("algorithm"="NLOPT_LD_SLSQP", "xtol_rel"=tol))
+  z_test <- seq(min(knots),max(knots), length.out=100)
+  ns_test <- splines2::bSpline(z_test, knots = knots, intercept = FALSE, Boundary.knots = boundaryPoint)
+  ns_test <- cbind(1, ns_test)
+  fit_test <- ns_test %*% fit_xi$solution
+  plot(z_test, fit_test)
   fit <- list(beta=beta_last, xi=fit_xi$solution, knots = knots,solution=fit$solution)
   fit
 }
 
 # updateBeta implements the Step 3 of the proposed algorithm
-updateBeta <- function(fit, covariate, response, treatment, estimatedNuisance, lossType='tanh', splitIndex = NULL, weights = NULL, tol = 1e-3, withConstraint = TRUE, boundaryPoint = c(-1,1)){
+updateBeta <- function(fit, covariate, response, treatment, estimatedNuisance, lossType='tanh', splitIndex = NULL, weights = NULL, tol = 1e-3, withConstraint = TRUE, boundaryPoint = c(-1,1), step=0.1){
   beta_last <- fit$beta
   xi <- fit$xi
   if(is.null(weights)){
@@ -369,11 +376,11 @@ updateBeta <- function(fit, covariate, response, treatment, estimatedNuisance, l
            'jacobian'=2*beta))
   }
   if (withConstraint){
-    fit_beta <- nloptr::nloptr(x0=fit$beta, eval_f = obj, eval_g_eq = constraint, opts = list("algorithm"="NLOPT_LD_SLSQP", "xtol_rel"=tol))
+    fit_beta <- nloptr::nloptr(x0=fit$beta, eval_f = obj, eval_g_eq = constraint, lb=beta_last-step, ub=beta_last+step, opts = list("algorithm"="NLOPT_LD_SLSQP", "xtol_rel"=tol))
   } else {
     fit_beta <- nloptr::nloptr(x0=fit$beta, eval_f = obj, opts = list("algorithm"="NLOPT_LD_SLSQP", "xtol_rel"=tol))
   }
-  fit <- list(beta=fit_beta$solution/sqrt(sum(fit_beta$solution^2)), xi=fit$xi, knots = fit$knots, solution = fit_beta)
+  fit <- list(beta=fit_beta$solution, xi=fit$xi, knots = fit$knots)
   fit
 }
 
