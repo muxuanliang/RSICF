@@ -24,7 +24,7 @@ rsfitSolver <- function(covariate, response, treatment, estimatedNuisance, split
     fit_last <- fit_beta
   }
   # final update
-  fit <- updateXi(fit_last, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, m_0=m_0, constraint=constraint, boundaryPoint = boundaryPoint)
+  fit <- updateXi(fit_last, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, m_0=m_0, constraint=constraint, boundaryPoint = boundaryPoint, numberKnots = numberKnots)
   fit_tmp <- updateBeta(fit, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, withConstraint = FALSE, boundaryPoint = boundaryPoint)
   fit$solution <- fit_tmp$beta
   fit$boundaryPoint <- boundaryPoint
@@ -64,9 +64,11 @@ rsfitSplit <- function(covariate, response, treatment, splitIndex = NULL, propen
   diff_min <- max(abs(fit_hat$solution-fit_hat$beta))
   fit_hat_min <- fit_hat
   dif_tmp <- diff_min
-  while((diff_min>10^(-3)) & (numberKnots <= 8) & (m_0 <= 2^8)){
-    if ((abs(dif_tmp - diff_min)<10^(-2))|(dif_tmp >= diff_min)|(sum(abs(fit_hat$xi))<m_0)){
+  while((diff_min>10^(-3)) & (numberKnots <= 7) & (m_0 <= 2^5)){
+    early_step <- FALSE
+    if (sum(abs(fit_hat$xi[-1]))<m_0){
       numberKnots <- numberKnots + 1
+      early_step <- TRUE
     } else {
       m_0 <- 2*m_0
     }
@@ -75,6 +77,12 @@ rsfitSplit <- function(covariate, response, treatment, splitIndex = NULL, propen
     if (dif_tmp < diff_min){
       fit_hat_min <- fit_hat
       diff_min <- dif_tmp
+    }
+    if ((dif_tmp > diff_min)&early_step&(sum(abs(fit_hat$xi[-1]))<m_0)){
+      break
+    }
+    if ((dif_tmp > diff_min)&(!early_step)&(sum(abs(fit_hat$xi[-1]))>=m_0)){
+      break
     }
   }
 
@@ -130,7 +138,7 @@ rsfit <- function(covariate, response, treatment, splitIndex = NULL, propensityM
   W1 <- (fit$fit[[1]]$W1+fit$fit[[2]]$W1+fit$fit[[3]]$W1)/3
   #W1 <- W1 + 10^(-5)*diag(min(diag(W1)),NCOL(covariate),NCOL(covariate))
   W2 <- (fit$fit[[1]]$W2+fit$fit[[2]]$W2+fit$fit[[3]]$W2)/3
-  fit$sigmaAN <- pmin(diag(solve(W1) %*% W2 %*% solve(W1)), diag((fit$fit[[1]]$sigmaAN+fit$fit[[2]]$sigmaAN+fit$fit[[3]]$sigmaAN)/3))
+  fit$sigmaAN <- diag((fit$fit[[1]]$sigmaAN+fit$fit[[2]]$sigmaAN+fit$fit[[3]]$sigmaAN)/3)
   fit
 }
 
