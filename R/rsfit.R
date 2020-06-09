@@ -9,17 +9,31 @@ rsfitSolver <- function(covariate, response, treatment, estimatedNuisance, split
   fit_last <- NULL
   tmp_beta<- (fit_earl$fit[[1]]$fit$beta[,fit_earl$fit[[1]]$fit$lambda==fit_earl$fit[[1]]$fit$lambda.min] + fit_earl$fit[[2]]$fit$beta[,fit_earl$fit[[2]]$fit$lambda==fit_earl$fit[[2]]$fit$lambda.min])/2
   fit_last$beta <- tmp_beta/sqrt(sum(tmp_beta^2))
+  fit_last$beta <- (tmp_beta+0.1)/sqrt(sum((tmp_beta+0.1)^2))
   fit_last$xi <- 0
   diff <- 1
+  step <- 0.1
   while((diff > tol) & (iter < 100)){
+    if(any(is.na(fit_last$beta))){
+      print(fit_last)
+      print(fit_xi)
+      print(fit_beta)
+      print(iter)
+    }
     # updateXi
     fit_xi <- updateXi(fit_last, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, m_0=m_0, constraint=constraint, boundaryPoint = boundaryPoint, numberKnots = numberKnots)
     # updateBeta
-    fit_beta <- updateBeta(fit_xi, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, withConstraint = TRUE, boundaryPoint = boundaryPoint, step=0.1)
+    fit_beta <- updateBeta(fit_xi, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, withConstraint = TRUE, boundaryPoint = boundaryPoint, step=step)
     # update no constraint
     #fit_tmp <- updateBeta(fit_xi, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, withConstraint = FALSE, boundaryPoint = boundaryPoint)
     #update
-    diff <- max(max(abs(fit_beta$beta-fit_last$beta)),max(c(abs(fit_beta$xi-fit_last$xi)))) #abs(fit_beta$beta-fit_tmp$beta))
+
+    diff_coef <- max(abs(fit_beta$beta-fit_last$beta))
+    diff_xi <- max(c(abs(fit_beta$xi-fit_last$xi))) #abs(fit_beta$beta-fit_tmp$beta))
+    if (diff_xi < tol){
+      step <- 2*step
+    }
+    diff <- max(diff_coef, diff_xi)
     iter <- iter+1
     fit_last <- fit_beta
   }
@@ -78,10 +92,10 @@ rsfitSplit <- function(covariate, response, treatment, splitIndex = NULL, propen
       fit_hat_min <- fit_hat
       diff_min <- dif_tmp
     }
-    if ((dif_tmp > diff_min)&early_step&(sum(abs(fit_hat$xi[-1]))<m_0)){
+    if ((dif_tmp > diff_min)&early_step&(sum(abs(fit_hat$xi))<m_0)){
       break
     }
-    if ((dif_tmp > diff_min)&(!early_step)&(sum(abs(fit_hat$xi[-1]))>=m_0)){
+    if ((dif_tmp > diff_min)&(!early_step)&(sum(abs(fit_hat$xi))>=m_0)){
       break
     }
   }
