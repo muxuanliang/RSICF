@@ -149,23 +149,10 @@ rsfit <- function(covariate, response, treatment, splitIndex = NULL, propensityM
     stopCluster(cl)
   }
   fit$betaAN <- (fit$fit[[1]]$betaAN+fit$fit[[2]]$betaAN+fit$fit[[3]]$betaAN)/3
-  fit$sigmaAN <- (fit$fit[[1]]$sigmaAN+fit$fit[[2]]$sigmaAN+fit$fit[[3]]$sigmaAN)/3
-
-  # normalize
-  norm1 <- sqrt(sum(fit$betaAN^2))
-  trans <- matrix(0, NROW(fit$sigmaAN), NCOL(fit$sigmaAN))
-  for (i in 1: NROW(fit$sigmaAN)){
-    for (j in 1:NCOL(fit$sigmaAN)){
-      if (i==j){
-        trans[i,j] <- (norm1^2-(fit$betaAN[i])^2)/(norm1^3)
-      } else {
-        trans[i,j] <- -(fit$betaAN[i]) * (fit$betaAN[j])/(norm1^3)
-      }
-    }
-  }
-  fit$sigmaAN <- diag(trans %*% fit$sigmaAN %*% trans)
-  fit$betaAN <- fit$betaAN/norm1
-  #return
+  W1 <- (fit$fit[[1]]$W1+fit$fit[[2]]$W1+fit$fit[[3]]$W1)/3
+  #W1 <- W1 + 10^(-5)*diag(min(diag(W1)),NCOL(covariate),NCOL(covariate))
+  W2 <- (fit$fit[[1]]$W2+fit$fit[[2]]$W2+fit$fit[[3]]$W2)/3
+  fit$sigmaAN <- diag((fit$fit[[1]]$sigmaAN+fit$fit[[2]]$sigmaAN+fit$fit[[3]]$sigmaAN)/3)
   fit
 }
 
