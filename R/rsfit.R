@@ -9,7 +9,7 @@ rsfitSolver <- function(covariate, response, treatment, estimatedNuisance, split
   fit_last <- NULL
   tmp_beta<- (fit_earl$fit[[1]]$fit$beta[,fit_earl$fit[[1]]$fit$lambda==fit_earl$fit[[1]]$fit$lambda.min] + fit_earl$fit[[2]]$fit$beta[,fit_earl$fit[[2]]$fit$lambda==fit_earl$fit[[2]]$fit$lambda.min])/2
   fit_last$beta <- tmp_beta/sqrt(sum(tmp_beta^2))
-  fit_last$beta <- (tmp_beta+0.1)/sqrt(sum((tmp_beta+0.1)^2))
+  #fit_last$beta <- (tmp_beta+0.1)/sqrt(sum((tmp_beta+0.1)^2))
   fit_last$xi <- 0
   diff <- 1
   step <- 0.1
@@ -92,10 +92,10 @@ rsfitSplit <- function(covariate, response, treatment, splitIndex = NULL, propen
       fit_hat_min <- fit_hat
       diff_min <- dif_tmp
     }
-    if ((dif_tmp > diff_min)&early_step&(sum(abs(fit_hat$xi))<m_0)){
+    if ((dif_tmp > diff_min)&early_step&(sum(abs(fit_hat$xi[-1]))<m_0)){
       break
     }
-    if ((dif_tmp > diff_min)&(!early_step)&(sum(abs(fit_hat$xi))>=m_0)){
+    if ((dif_tmp > diff_min)&(!early_step)&(sum(abs(fit_hat$xi[-1]))>=m_0)){
       break
     }
   }
