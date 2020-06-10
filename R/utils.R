@@ -195,6 +195,7 @@ getPropensityModel <- function(data, method=c('lm', 'glmnet', 'kernel'), splitIn
   fit <- NULL
   dataPredict <- NULL
   dataPredict=data$predictor[sampleSplitIndex,supp]
+  dataTrain$predictor = dataTrain$predictor[,supp]
   if (predictAll){
     dataPredict=data$predictor[,supp]
   }
