@@ -53,45 +53,45 @@ rsInference <- function(rsfit, efficient = FALSE){
   S <- S/sum(splitIndex$fit)
 
   # deal with ill-posed variance
-  t <- try(solve(W1))
-  while('try-error' %in% t){
-    W1 <- W1 + 1e-5 * diag(1, NROW(W1), NCOL(W1))
-    t <- try(solve(W1))
+  t <- try(solve(W1), silent = TRUE)
+  while('try-error' %in% class(t)){
+    W1 <- W1 + 1e-5 * diag(1,NCOL(covariate),NCOL(covariate))
+    t <- try(solve(W1), silent = TRUE)
   }
 
   betaAN <- rsfit$fit$beta-solve(W1) %*% S
   sigmaAN <- solve(W1) %*% W2 %*% solve(W1)
 
-  # ig sigmaAN < 0
+  # if sigmaAN < 0
   if (min(diag(sigmaAN))<0){
     W1 <- matrix(0, NCOL(covariate), NCOL(covariate))
     for (iter in sampleIndex[splitIndex$fit]){
       W1 <- W1+w1[iter] * (covariate[iter,]-tildeX[iter,]) %*% t(covariate[iter,]-tildeX[iter,])
     }
     W1 <- W1/sum(splitIndex$fit)
-  }
-  t <- try(solve(W1))
-  while('try-error' %in% t){
-    W1 <- W1 + 1e-5 * diag(1, NROW(W1), NCOL(W1))
-    t <- try(solve(W1))
-  }
-  betaAN <- rsfit$fit$beta-solve(W1) %*% S
-  sigmaAN <- solve(W1) %*% W2 %*% solve(W1)
-
-  # normalize
-  norm1 <- sqrt(sum(betaAN^2))
-  trans <- matrix(0, NROW(sigmaAN), NCOL(sigmaAN))
-  for (i in 1: NROW(sigmaAN)){
-    for (j in 1:NCOL(sigmaAN)){
-      if (i==j){
-        trans[i,j] <- (norm1^2-(betaAN[i])^2)/norm1^3
-      } else {
-        trans[i,j] <- -(betaAN[i]) * (betaAN[j])/norm1^3
-      }
+    t <- try(solve(W1), silent = TRUE)
+    while('try-error' %in% class(t)){
+      W1 <- W1 + 1e-5 * diag(1,NCOL(covariate),NCOL(covariate))
+      t <- try(solve(W1), silent = TRUE)
     }
+    betaAN <- rsfit$fit$beta-solve(W1) %*% S
+    sigmaAN <- solve(W1) %*% W2 %*% solve(W1)
   }
-  sigmaAN <- trans %*% sigmaAN %*% trans
-  betaAN <- betaAN/norm1
+
+  # # normalize
+  # norm1 <- sqrt(sum(betaAN^2))
+  # trans <- matrix(0, NROW(sigmaAN), NCOL(sigmaAN))
+  # for (i in 1: NROW(sigmaAN)){
+  #   for (j in 1:NCOL(sigmaAN)){
+  #     if (i==j){
+  #       trans[i,j] <- (norm1^2-(betaAN[i])^2)/norm1^3
+  #     } else {
+  #       trans[i,j] <- -(betaAN[i]) * (betaAN[j])/norm1^3
+  #     }
+  #   }
+  # }
+  # sigmaAN <- trans %*% sigmaAN %*% trans
+  # betaAN <- betaAN/norm1
   # return
   list(fit=rsfit$fit, betaAN=betaAN, W1=W1, W2=W2, sigmaAN=sigmaAN)
 }
