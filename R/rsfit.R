@@ -21,7 +21,7 @@ rsfitSolver <- function(covariate, response, treatment, estimatedNuisance, split
       print(iter)
     }
     # updateXi
-    fit_xi <- updateXi(fit_last, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, m_0=m_0, constraint=constraint, boundaryPoint = boundaryPoint, numberKnots = numberKnots)
+    fit_xi <- updateXi(fit_last, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = 1e-5, m_0=m_0, constraint=constraint, boundaryPoint = boundaryPoint, numberKnots = numberKnots)
     # updateBeta
     fit_beta <- updateBeta(fit_xi, covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex,lossType = lossType, weights = weights, tol = tol, withConstraint = TRUE, boundaryPoint = boundaryPoint, step=step)
     # update no constraint
@@ -30,9 +30,6 @@ rsfitSolver <- function(covariate, response, treatment, estimatedNuisance, split
 
     diff_coef <- max(abs(fit_beta$beta-fit_last$beta))
     diff_xi <- max(c(abs(fit_beta$xi-fit_last$xi))) #abs(fit_beta$beta-fit_tmp$beta))
-    if (diff_xi < tol){
-      step <- 2*step
-    }
     diff <- max(diff_coef, diff_xi)
     iter <- iter+1
     fit_last <- fit_beta
@@ -73,7 +70,7 @@ rsfitSplit <- function(covariate, response, treatment, splitIndex = NULL, propen
 
   # solve
   m_0 <- 5
-  numberKnots <- 5
+  numberKnots <- 3
   fit_hat <- rsfitSolver(covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, lossType = lossType, weights =weights, tol = tol, m_0=m_0, constraint = constraint, boundaryPoint = boundaryPoint, numberKnots = numberKnots)
   diff_min <- max(abs(fit_hat$solution-fit_hat$beta))
   fit_hat_min <- fit_hat
@@ -138,34 +135,50 @@ rsfit <- function(covariate, response, treatment, splitIndex = NULL, propensityM
   } else {
     library(doParallel)
     n_cores <- detectCores(all.tests = FALSE, logical = TRUE)
-    cl <- makeCluster(2)
+    cl <- makeCluster(3)
     registerDoParallel(cl)
-    fit <- foreach(iter = c(TRUE, FALSE))%dopar%{
+    result <- foreach(iter = c(1,2,3), .packages = c("RSICF","ITRInference", 'glmnet', 'mgcv'))%dopar%{
       splitIndex_local <- NULL
-      splitIndex_local$nuisance <- (splitIndex$nuisance==iter)
-      splitIndex_local$fit <- (splitIndex$fit==iter)
-      rsfitSplit(covariate, response, treatment, splitIndex = splitIndex_local, lossType = lossType, propensityModel = propensityModel, estimatedPropensity = estimatedPropensity, outcomeModel=outcomeModel, estimatedOutcome = estimatedOutcome, weights = weights, tol=tol, propensityFormula = propensityFormula, outcomeFormula = outcomeFormula, constraint = constraint, boundaryPoint = boundaryPoint)
+      if (iter == 1){
+        splitIndex_local <- splitIndex
+      } else if (iter == 2) {
+        splitIndex_local$nuisance <- splitIndex$infer
+        splitIndex_local$infer <- splitIndex$fit
+        splitIndex_local$fit <- splitIndex$nuisance
+      } else {
+        splitIndex_local$nuisance <- splitIndex$fit
+        splitIndex_local$infer <- splitIndex$nuisance
+        splitIndex_local$fit <- splitIndex$infer
+      }
+      fit_tmp <- rsfitSplit(covariate, response, treatment, splitIndex = splitIndex_local, lossType = lossType, propensityModel = propensityModel, estimatedPropensity = estimatedPropensity, outcomeModel=outcomeModel, estimatedOutcome = estimatedOutcome, weights = weights, tol=tol, propensityFormula = propensityFormula, outcomeFormula = outcomeFormula, constraint = constraint, boundaryPoint = boundaryPoint)
+      rsInference(fit_tmp, efficient=efficient)
     }
     stopCluster(cl)
+    fit$fit <- result
   }
   fit$betaAN <- (fit$fit[[1]]$betaAN+fit$fit[[2]]$betaAN+fit$fit[[3]]$betaAN)/3
   fit$sigmaAN <- (fit$fit[[1]]$sigmaAN+fit$fit[[2]]$sigmaAN+fit$fit[[3]]$sigmaAN)/3
 
   # normalize
-  norm1 <- sqrt(sum(fit$betaAN^2))
-  trans <- matrix(0, NROW(fit$sigmaAN), NCOL(fit$sigmaAN))
-  for (i in 1: NROW(fit$sigmaAN)){
-    for (j in 1:NCOL(fit$sigmaAN)){
+  fit$betaAN.renorm <- (fit$fit[[1]]$betaAN.renorm+fit$fit[[2]]$betaAN.renorm+fit$fit[[3]]$betaAN.renorm)/3
+  fit$sigmaAN.renorm <- (fit$fit[[1]]$sigmaAN.renorm+fit$fit[[2]]$sigmaAN.renorm+fit$fit[[3]]$sigmaAN.renorm)/3
+  norm1 <- sqrt(sum(fit$betaAN.renorm^2))
+  trans <- matrix(0, NROW(fit$sigmaAN.renorm), NCOL(fit$sigmaAN.renorm))
+  for (i in 1: NROW(fit$sigmaAN.renorm)){
+    for (j in 1:NCOL(fit$sigmaAN.renorm)){
       if (i==j){
-        trans[i,j] <- (norm1^2-(fit$betaAN[i])^2)/(norm1^3)
+        trans[i,j] <- (norm1^2-(fit$betaAN.renorm[i])^2)/(norm1^3)
       } else {
-        trans[i,j] <- -(fit$betaAN[i]) * (fit$betaAN[j])/(norm1^3)
+        trans[i,j] <- -(fit$betaAN.renorm[i]) * (fit$betaAN.renorm[j])/(norm1^3)
       }
     }
   }
-  fit$sigmaAN <- diag(trans %*% fit$sigmaAN %*% trans)
-  fit$betaAN <- fit$betaAN/norm1
+  fit$sigmaAN.renorm <- trans %*% fit$sigmaAN.renorm %*% trans
+  fit$betaAN.renorm <- fit$betaAN.renorm/norm1
+
   #return
+  fit$sigmaAN <- diag(fit$sigmaAN)
+  fit$sigmaAN.renorm <- diag(fit$sigmaAN.renorm)
   fit
 }
 

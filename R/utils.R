@@ -167,6 +167,7 @@ getPropensityModel <- function(data, method=c('lm', 'glmnet', 'kernel'), splitIn
         supp <- (ans <= p/2)
       }
     }
+    dataTrain$predictor = dataTrain$predictor[,supp]
   }
   if ((0.05*size < p) || (method == 'glmnet')) {
     fit <- glmnet::cv.glmnet(x = dataTrain$predictor, y = dataTrain$treatment, family='binomial')
@@ -195,7 +196,6 @@ getPropensityModel <- function(data, method=c('lm', 'glmnet', 'kernel'), splitIn
   fit <- NULL
   dataPredict <- NULL
   dataPredict=data$predictor[sampleSplitIndex,supp]
-  dataTrain$predictor = dataTrain$predictor[,supp]
   if (predictAll){
     dataPredict=data$predictor[,supp]
   }
