@@ -1,4 +1,4 @@
-rsInference <- function(rsfit, efficient = FALSE){
+rsInference <- function(rsfit, efficient = FALSE, local=TRUE){
   # set parameter
   estimatedNuisance <- rsfit$estimatedNuisance
   splitIndex <- rsfit$splitIndex
@@ -13,11 +13,22 @@ rsInference <- function(rsfit, efficient = FALSE){
 
   # set weight
   weights <- 1
-  if(efficient){
+  if(efficient & local){
     eta <- predict.rsfitSplit(rsfit$fit, newx = covariate, type='eta')
+    theta <- predict.rsfitSplit(rsfit$fit, newx = covariate)
     # augmentation
     ratio <- (1-eta)/(1+eta)
-    inv_W <- 1/estimatedNuisance$pi * ratio + 1/(1-estimatedNuisance$pi) * 1/ratio
+    inv_W <- (1/estimatedNuisance$pi * ratio + 1/(1-estimatedNuisance$pi) * 1/ratio)*(exp(theta/2)+exp(-theta/2))^2
+    weights <- inv_W^(-1) * estimatedNuisance$S
+  }
+  if(efficient & (!local)){
+    eta <- predict.rsfitSplit(rsfit$fit, newx = covariate, type='eta')
+    theta <- predict.rsfitSplit(rsfit$fit, newx = covariate)
+    # augmentation
+    ratio <- (1-eta)/(1+eta)
+    var_treated <- estimatedNuisance$var_treated
+    var_control <- estimatedNuisance$var_control
+    inv_W <- (1/estimatedNuisance$pi * ratio * var_treated + 1/(1-estimatedNuisance$pi) * 1/ratio * var_control)*(exp(theta/2)+exp(-theta/2))^2
     weights <- inv_W^(-1) * estimatedNuisance$S
   }
 

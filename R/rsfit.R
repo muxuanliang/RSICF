@@ -8,8 +8,12 @@ rsfitSolver <- function(covariate, response, treatment, estimatedNuisance, split
   # iteration start
   fit_last <- NULL
   tmp_beta<- (fit_earl$fit[[1]]$fit$beta[,fit_earl$fit[[1]]$fit$lambda==fit_earl$fit[[1]]$fit$lambda.min] + fit_earl$fit[[2]]$fit$beta[,fit_earl$fit[[2]]$fit$lambda==fit_earl$fit[[2]]$fit$lambda.min])/2
-  fit_last$beta <- tmp_beta/sqrt(sum(tmp_beta^2))
-  #fit_last$beta <- (tmp_beta+0.1)/sqrt(sum((tmp_beta+0.1)^2))
+  if (sum(tmp_beta^2)<10^-3){
+    fit_last$beta <- (tmp_beta+0.1)/sqrt(sum((tmp_beta+0.1)^2))
+  } else {
+    fit_last$beta <- tmp_beta/sqrt(sum(tmp_beta^2))
+  }
+
   fit_last$xi <- 0
   diff <- 1
   step <- 0.1
@@ -63,6 +67,13 @@ rsfitSplit <- function(covariate, response, treatment, splitIndex = NULL, propen
     estimatedNuisance$treatment <- predictedOutcomeAll$treatment
   }
 
+  # fit conditional variance
+  residual_square <- (response - (predictedOutcomeAll$control * (treatment==0) + predictedOutcomeAll$treatment * (treatment==1)))^2
+  data <- list(predictor = covariate, treatment = treatment, outcome = residual_square)
+  predictedVarAll <- getOutcomeModel(data, method = outcomeModel, splitIndex = splitIndex, Formula = outcomeFormula, predictAll = TRUE)
+  estimatedNuisance$var_control <- predictedVarAll$control
+  estimatedNuisance$var_treated <- predictedVarAll$treatment
+
   # weights
   if(is.null(weights)){
     weights <- rep(1, times=NROW(covariate))
@@ -102,7 +113,7 @@ rsfitSplit <- function(covariate, response, treatment, splitIndex = NULL, propen
 }
 
 # rsfit obtains sysmetric results
-rsfit <- function(covariate, response, treatment, splitIndex = NULL, propensityModel = 'glmnet', estimatedPropensity = NULL, outcomeModel = 'kernel', estimatedOutcome = NULL, lossType = 'logistic', weights = NULL, tol = 1e-3, propensityFormula=NULL, outcomeFormula=NULL, parallel = FALSE, constraint = TRUE, boundaryPoint = c(-1,1), efficient = TRUE){
+rsfit <- function(covariate, response, treatment, splitIndex = NULL, propensityModel = 'glmnet', estimatedPropensity = NULL, outcomeModel = 'kernel', estimatedOutcome = NULL, lossType = 'logistic', weights = NULL, tol = 1e-3, propensityFormula=NULL, outcomeFormula=NULL, parallel = FALSE, constraint = TRUE, boundaryPoint = c(-1,1), efficient = TRUE, local=TRUE){
   n <- NROW(covariate)
   if(is.null(splitIndex)){
     random_index <- sample(c(1,2,3), n, replace = TRUE)
@@ -115,7 +126,7 @@ rsfit <- function(covariate, response, treatment, splitIndex = NULL, propensityM
   fit$fit <- NULL
   if(!parallel){
     fit_tmp <- rsfitSplit(covariate, response, treatment, splitIndex = splitIndex, lossType = lossType, propensityModel = propensityModel, estimatedPropensity = estimatedPropensity, outcomeModel=outcomeModel, estimatedOutcome = estimatedOutcome, weights = weights, tol=tol, propensityFormula = propensityFormula, outcomeFormula = outcomeFormula, constraint = constraint, boundaryPoint = boundaryPoint)
-    fit$fit[[1]] <- rsInference(fit_tmp, efficient=efficient)
+    fit$fit[[1]] <- rsInference(fit_tmp, efficient=efficient, local = local)
     # rotate the index
     tmp <- splitIndex$nuisance
     splitIndex$nuisance <- splitIndex$infer
@@ -123,7 +134,7 @@ rsfit <- function(covariate, response, treatment, splitIndex = NULL, propensityM
     splitIndex$fit <- tmp
 
     fit_tmp <- rsfitSplit(covariate, response, treatment, splitIndex = splitIndex, lossType = lossType, propensityModel = propensityModel, estimatedPropensity = estimatedPropensity, outcomeModel=outcomeModel, estimatedOutcome = estimatedOutcome, weights = weights, tol=tol, propensityFormula = propensityFormula, outcomeFormula = outcomeFormula, constraint = constraint, boundaryPoint = boundaryPoint)
-    fit$fit[[2]] <- rsInference(fit_tmp, efficient=efficient)
+    fit$fit[[2]] <- rsInference(fit_tmp, efficient=efficient, local = local)
     # rotate the index
     tmp <- splitIndex$nuisance
     splitIndex$nuisance <- splitIndex$infer
@@ -131,7 +142,7 @@ rsfit <- function(covariate, response, treatment, splitIndex = NULL, propensityM
     splitIndex$fit <- tmp
 
     fit_tmp <- rsfitSplit(covariate, response, treatment, splitIndex = splitIndex, lossType = lossType, propensityModel = propensityModel, estimatedPropensity = estimatedPropensity, outcomeModel=outcomeModel, estimatedOutcome = estimatedOutcome, weights = weights, tol=tol, propensityFormula = propensityFormula, outcomeFormula = outcomeFormula, constraint = constraint, boundaryPoint = boundaryPoint)
-    fit$fit[[3]] <- rsInference(fit_tmp, efficient=efficient)
+    fit$fit[[3]] <- rsInference(fit_tmp, efficient=efficient, local = local)
   } else {
     library(doParallel)
     n_cores <- detectCores(all.tests = FALSE, logical = TRUE)
@@ -151,7 +162,7 @@ rsfit <- function(covariate, response, treatment, splitIndex = NULL, propensityM
         splitIndex_local$fit <- splitIndex$infer
       }
       fit_tmp <- rsfitSplit(covariate, response, treatment, splitIndex = splitIndex_local, lossType = lossType, propensityModel = propensityModel, estimatedPropensity = estimatedPropensity, outcomeModel=outcomeModel, estimatedOutcome = estimatedOutcome, weights = weights, tol=tol, propensityFormula = propensityFormula, outcomeFormula = outcomeFormula, constraint = constraint, boundaryPoint = boundaryPoint)
-      rsInference(fit_tmp, efficient=efficient)
+      rsInference(fit_tmp, efficient=efficient, local = local)
     }
     stopCluster(cl)
     fit$fit <- result
