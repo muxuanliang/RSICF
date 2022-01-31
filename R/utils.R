@@ -30,7 +30,7 @@ predict.rsfitSplit <- function(fit, newx, derivative = FALSE,lossType = 'logisti
 # rsfitSolver obtains the optimizer of the proposed optimization given M_n
 rsfitSolver <- function(covariate, response, treatment, estimatedNuisance, splitIndex = NULL, lossType = 'logistic', weights = NULL, tol = 10^(-3), m_0=0, constraint = TRUE, boundaryPoint=c(-1,1), numberKnots = 5){
   # initialization
-  fit_earl <- ITRFitAll(list(predictor = covariate, treatment = (treatment > 0), outcome = response), loss = 'logistic', sampleSplitIndex = splitIndex$nuisance, propensity = estimatedNuisance$pi, outcome = estimatedNuisance, test=FALSE)
+  fit_earl <- ITRInference::ITRFitInfer(list(predictor = covariate, treatment = (treatment > 0), outcome = response), loss = 'logistic', sampleSplitIndex = splitIndex$nuisance, propensity = estimatedNuisance$pi, outcome = estimatedNuisance, test=FALSE)
   #fit_init <- fitLinkLinear(covariate, response, treatment, estimatedNuisance, splitIndex = splitIndex, lossType = lossType, weights = weights, tol = tol)
   iter <- 0
 

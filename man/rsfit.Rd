@@ -47,7 +47,7 @@ A list
 \describe{
 \item{betaAN}{The one-step updated coefficients estimates}
 \item{sigmaAN}{The estimated sd of the estimated coefficients}
-\item{betaAN.renorm}{The one-step updated coefficients estimates after re-normalized such that \|\beta\|_2=1}
+\item{betaAN.renorm}{The one-step updated coefficients estimates after re-normalized such that \|beta\|_2=1}
 \item{sigmaAN.renorm}{The estimated sd of the normalized estimates}
 \item{fit}{A list used for predict.rsfit which predicts the relative contrast}
 }

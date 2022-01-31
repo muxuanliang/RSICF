@@ -12,7 +12,7 @@
 #' \describe{
 #' \item{betaAN}{The one-step updated coefficients estimates}
 #' \item{sigmaAN}{The estimated sd of the estimated coefficients}
-#' \item{betaAN.renorm}{The one-step updated coefficients estimates after re-normalized such that \|\beta\|_2=1}
+#' \item{betaAN.renorm}{The one-step updated coefficients estimates after re-normalized such that \|beta\|_2=1}
 #' \item{sigmaAN.renorm}{The estimated sd of the normalized estimates}
 #' \item{fit}{A list used for predict.rsfit which predicts the relative contrast}
 #' }
@@ -52,11 +52,10 @@ rsfit <- function(covariate, response, treatment, splitIndex = NULL, propensityM
     fit_tmp <- rsfitSplit(covariate, response, treatment, splitIndex = splitIndex, lossType = lossType, propensityModel = propensityModel, estimatedPropensity = estimatedPropensity, outcomeModel=outcomeModel, estimatedOutcome = estimatedOutcome, weights = weights, tol=tol, propensityFormula = propensityFormula, outcomeFormula = outcomeFormula, constraint = constraint, boundaryPoint = boundaryPoint)
     fit$fit[[3]] <- rsInference(fit_tmp, efficient=efficient, local = local)
   } else {
-    library(doParallel)
-    n_cores <- detectCores(all.tests = FALSE, logical = TRUE)
-    cl <- makeCluster(3)
-    registerDoParallel(cl)
-    result <- foreach(iter = c(1,2,3), .packages = c("RSICF","ITRInference", 'glmnet', 'mgcv'))%dopar%{
+    n_cores <- doParallel::detectCores(all.tests = FALSE, logical = TRUE)
+    cl <- doParallel::makeCluster(3)
+    doParallel::registerDoParallel(cl)
+    result <- doParallel::foreach(iter = c(1,2,3))%dopar%{
       splitIndex_local <- NULL
       if (iter == 1){
         splitIndex_local <- splitIndex
@@ -69,10 +68,10 @@ rsfit <- function(covariate, response, treatment, splitIndex = NULL, propensityM
         splitIndex_local$infer <- splitIndex$nuisance
         splitIndex_local$fit <- splitIndex$infer
       }
-      fit_tmp <- rsfitSplit(covariate, response, treatment, splitIndex = splitIndex_local, lossType = lossType, propensityModel = propensityModel, estimatedPropensity = estimatedPropensity, outcomeModel=outcomeModel, estimatedOutcome = estimatedOutcome, weights = weights, tol=tol, propensityFormula = propensityFormula, outcomeFormula = outcomeFormula, constraint = constraint, boundaryPoint = boundaryPoint)
+      fit_tmp <- RSICF::rsfitSplit(covariate, response, treatment, splitIndex = splitIndex_local, lossType = lossType, propensityModel = propensityModel, estimatedPropensity = estimatedPropensity, outcomeModel=outcomeModel, estimatedOutcome = estimatedOutcome, weights = weights, tol=tol, propensityFormula = propensityFormula, outcomeFormula = outcomeFormula, constraint = constraint, boundaryPoint = boundaryPoint)
       rsInference(fit_tmp, efficient=efficient, local = local)
     }
-    stopCluster(cl)
+    doParallel::stopCluster(cl)
     fit$fit <- result
   }
   fit$betaAN <- (fit$fit[[1]]$betaAN+fit$fit[[2]]$betaAN+fit$fit[[3]]$betaAN)/3

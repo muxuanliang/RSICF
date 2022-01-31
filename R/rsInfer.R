@@ -36,7 +36,7 @@ rsInference <- function(rsfit, efficient = FALSE, local=TRUE){
   link <- covariate %*% rsfit$fit$beta
   exp_gam <- function(x, y){
     shadow_data <- data.frame(predictor = x, response = y)
-    shadow_model <- gam(response~predictor, data = shadow_data)
+    shadow_model <- mgcv::gam(response~predictor, data = shadow_data)
     as.matrix(predict(shadow_model, newdata = data.frame(predictor = link),type='response'))
   }
   tmp_w <- response/(estimatedNuisance$pi*treatment+(1-estimatedNuisance$pi)*(1-treatment))
