@@ -16,7 +16,8 @@ Imports:
          VariableScreening,
          mgcv,
          nloptr,
-         spline2
+         spline2,
+         ITRInference
 
 Encoding: UTF-8
 
