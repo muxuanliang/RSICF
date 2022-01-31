@@ -16,7 +16,8 @@ Imports:
          VariableScreening,
          mgcv,
          nloptr,
-         spline2
+         spline2,
+         ITRInference
 
 Encoding: UTF-8
 
@@ -44,8 +45,8 @@ fit <- rsfit(x, y, trt, splitIndex = NULL, propensityModel = 'kernel', outcomeMo
 
 ### Prediction
 
-xtest <- matrix(runif(10^5*p, -0.5,0.5), c(10^5,p)) %*% cor_matrix
-    predict_trt <- as.numeric(predict.rsfit(fit$fit, newx = xtest)>0)
+xtest <- matrix(runif(10^5*p, -0.5,0.5), c(10^5,p))
+predict_trt <- as.numeric(predict.rsfit(fit$fit, newx = xtest)>0)
     
 ```
 # References
