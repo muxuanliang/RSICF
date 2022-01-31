@@ -1,4 +1,17 @@
-#predict.rsfit get the predicted treatment
+#' predict.rsfit get the predicted relative contrast function
+#'
+#' @param fit the list fit in the output of rsfit.
+#' @param newx input matrix of dimension nobs x nvars. Each raw is a new observation, each column is a covariate
+#' @type Default is 'transformed' which gives the prediction of the  target relative contrast function in the paper; another option is 'eta', which gives the prediction of E[Y_1-Y_{-1}|X]/E[Y_1+Y_{-1}|X].
+#' @return  A Array
+#' \describe{
+#' A array includes all predictions.
+#' }
+#' @references Muxuan Liang, Menggang Yu (2022). Relative Contrast Estimation and Inference for Treatment Recommendation.
+#'
+#' @author Muxuan Liang
+#' @export
+#'
 predict.rsfit <- function(fit, newx, lossType = 'logistic', type = 'transformed'){
   splitNumber <- length(fit)
   res_all <- sapply(fit, function(t){
@@ -15,24 +28,3 @@ predict.rsfit <- function(fit, newx, lossType = 'logistic', type = 'transformed'
   apply(res_all,1,mean)
 }
 
-# predict.rsfit gets the predicted treatment for a splitted fit
-predict.rsfitSplit <- function(fit, newx, derivative = FALSE,lossType = 'logistic', type = 'value'){
-  t <- fit
-  z <- newx %*% t$beta
-  spline <- splines2::bSpline(z, knots=t$knots, intercept = FALSE, Boundary.knots = t$boundaryPoint)
-  pre <- cbind(1,spline)%*%t$xi
-  if(sum(abs(t$xi))<1e-5){
-    pre <- z
-  }
-  if(derivative){
-    div <- nsd(z, knots = t$knots, intercept = FALSE, Boundary.knots = t$boundaryPoint)
-    pre <- cbind(0, div)%*%t$xi
-    if(sum(abs(t$xi))<1e-5){
-      pre <- 1
-    }
-  }
-  if (type=='eta'){
-    pre <- link(pre, lossType = lossType)
-  }
-  pre
-}
