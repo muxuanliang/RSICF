@@ -9,7 +9,7 @@ Maintainer: Muxuan Liang <mliang@fredhutch.org>
 
 Description: The package implements a semiparametric efficient inference of the relative contrast function under a monotonic single-index model assumption. User can choose bespoke methods to estimate outcome model and propensity. The package also provides a variaty of methods to estimate these nuisance parameters. It returns the coefficeint estimates and its sd for constructing CI of the single-index.
 
-License: GPL-3
+License: MIT
 
 Imports: 
          glmnet,
